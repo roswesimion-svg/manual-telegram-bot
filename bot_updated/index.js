@@ -7,7 +7,6 @@ const fs      = require("fs");
 const path    = require("path");
 const TelegramBot = require("node-telegram-bot-api");
 const db = require("./db");
-const advertCommands = require("./commands/advert");
 
 // ─── APP SETUP ───────────────────────────────────────────────────────────────
 const app = express();
@@ -286,7 +285,6 @@ function explicitKeyboard() {
   };
 }
 
-// ─── UPDATED PAYMENT KEYBOARD — direct pay to number, no STK ─────────────────
 function paymentKeyboard() {
   return {
     inline_keyboard: [
@@ -397,7 +395,6 @@ async function grantAccess(rawChatId, planLabel, paymentSummary, isManualApprova
 
     const expiresAtMs = Date.now() + durationMs;
 
-    // ── LOADING STATE 1: Notify user we are processing ──────────────────────
     try {
       await bot.sendChatAction(cid(chatId), "typing");
       await safeSendMessage(chatId, `⏳ _Processing your payment…_`, { parse_mode: "Markdown" });
@@ -421,7 +418,7 @@ async function grantAccess(rawChatId, planLabel, paymentSummary, isManualApprova
       console.error(`❌ createChatInviteLink failed for ${chatId}: ${inviteErr.message}`);
       notifyAdmins(
         `⚠️ *INVITE LINK CREATION FAILED*\n\n` +
-        `🆔 *Chat ID:* \`${chatId}\\n` +
+        `🆔 *Chat ID:* \`${chatId}\`\n` +
         `📦 *Plan:* ${resolvedLabel}\n` +
         `❌ *Error:* ${inviteErr.message}\n\n` +
         `💡 Manually grant with: /grant ${chatId} "${resolvedLabel}"`
@@ -438,7 +435,6 @@ async function grantAccess(rawChatId, planLabel, paymentSummary, isManualApprova
       planNote = `\n\n💬 _Many users enjoy the 1-hour experience — it's just the right taste!_\n_Whenever you're ready to extend, we'll be right here. No pressure_ 😊`;
     }
 
-    // ── APPROVAL NOTICE (manual approvals only) ───────────────────────────
     if (isManualApproval) {
       try {
         await safeSendMessage(chatId,
@@ -450,7 +446,6 @@ async function grantAccess(rawChatId, planLabel, paymentSummary, isManualApprova
       } catch (_) {}
     }
 
-    // ─── LINK DELIVERY WITH RETRY ──────────────────────────────────────────
     const MAX_DELIVERY_RETRIES = 5;
     let deliverySuccess = false;
     let lastDeliveryError = null;
@@ -489,7 +484,7 @@ async function grantAccess(rawChatId, planLabel, paymentSummary, isManualApprova
       const adminAlertMsg =
         `⚠️ *LINK DELIVERY FAILURE ALERT*\n\n` +
         `User has *NOT received the link* after ${MAX_DELIVERY_RETRIES} retries.\n\n` +
-        `🆔 *Chat ID:* \`${chatId}\\n` +
+        `🆔 *Chat ID:* \`${chatId}\`\n` +
         `👤 *Username:* ${sel2.username || `User ${chatId}`}\n` +
         `📦 *Package:* ${sel2.package || pkg} — ${resolvedLabel}\n` +
         `🔗 *Invite Link:* ${inviteLink}\n\n` +
@@ -500,7 +495,6 @@ async function grantAccess(rawChatId, planLabel, paymentSummary, isManualApprova
       } catch (_) { notifyAdmins(adminAlertMsg); }
     }
 
-    // ─── EXPIRY TIMER ──────────────────────────────────────────────────────
     const kickTimer = setTimeout(async () => {
       console.log(`🔴 EXPIRY: ${chatId}`);
       for (let attempt = 1; attempt <= 3; attempt++) {
@@ -524,7 +518,6 @@ async function grantAccess(rawChatId, planLabel, paymentSummary, isManualApprova
       delete userInviteLinks[chatId];
     }, durationMs);
 
-    // ─── 24-HOUR WARNING TIMER ─────────────────────────────────────────────
     let warnTimer = null;
     const shortPlans = ["1 Hour", "6 Hours", "1 Day"];
     if (!shortPlans.includes(resolvedLabel) && durationMs > warnMs) {
@@ -567,7 +560,7 @@ function clearSubTimers(chatId) {
   }
 }
 
-// ─── M-PESA CALLBACK (kept for future STK use) ───────────────────────────────
+// ─── M-PESA CALLBACK ─────────────────────────────────────────────────────────
 app.post("/mpesa/callback", (req, res) => {
   console.log("📩 MPESA CALLBACK RECEIVED:", JSON.stringify(req.body));
   res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
@@ -640,6 +633,166 @@ async function restoreActiveSubscriptions() {
   console.log(`✅ Restored ${Object.keys(subTimers).length} active subscriptions`);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── ADVERT FEATURE ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ADVERT_FILE = path.join(__dirname, "advert.json");
+const advertEditSessions = {};
+
+function loadAdvert() {
+  try {
+    if (fs.existsSync(ADVERT_FILE)) {
+      return JSON.parse(fs.readFileSync(ADVERT_FILE, "utf8"));
+    }
+  } catch (e) {
+    console.error("⚠️ Could not load advert.json:", e.message);
+  }
+  // default data on first run
+  return {
+    message: "🔥 Choose Your Category Below 🔥",
+    link: "https://t.me/Naughty254Premiumbot",
+    buttons: [
+      { id: 1,  text: "❤️ Make mFike 😘" },
+      { id: 2,  text: "💋 Hanna Bentle Leaks ❤️🔥" },
+      { id: 3,  text: "❤️ Gilbo Ntinya 👀🍑" },
+      { id: 4,  text: "Brian Ngeli Chronicles 😭🥵🍆❤️" },
+      { id: 5,  text: "Kenyan shirt pawn 😘❤️" },
+      { id: 6,  text: "Somali LEAKs 😭🥵❤️" },
+      { id: 7,  text: "All Celebrity LEAKS 🍆🤤" },
+      { id: 8,  text: "Trending Leaks 👀🔥" },
+      { id: 9,  text: "Marlon Nipel Leaks 😭🥵" },
+      { id: 10, text: "Kenya Play House 🤤🥵❤️" },
+      { id: 11, text: "Local Pawn shirt 😘❤️" },
+      { id: 12, text: "ALL OF THE ABOVE 💯🍑🔥" },
+    ]
+  };
+}
+
+function saveAdvert(data) {
+  try {
+    fs.writeFileSync(ADVERT_FILE, JSON.stringify(data, null, 2));
+    return true;
+  } catch (e) {
+    console.error("⚠️ Could not save advert.json:", e.message);
+    return false;
+  }
+}
+
+function buildAdvertKeyboard(advertData) {
+  const { buttons, link } = advertData;
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 2) {
+    const row = [{ text: buttons[i].text, url: link }];
+    if (buttons[i + 1]) row.push({ text: buttons[i + 1].text, url: link });
+    rows.push(row);
+  }
+  return { inline_keyboard: rows };
+}
+
+function advertNextId(advertData) {
+  if (!advertData.buttons.length) return 1;
+  return Math.max(...advertData.buttons.map(b => b.id)) + 1;
+}
+
+// ─── /advert ──────────────────────────────────────────────────────────────────
+bot.onText(/\/advert$/, async (msg) => {
+  const chatId = cid(msg.chat.id);
+  if (!ADMIN_IDS.includes(chatId)) {
+    return safeSendMessage(chatId, "🚫 This command is for admins only.");
+  }
+  const advert = loadAdvert();
+  try {
+    await bot.sendMessage(chatId, advert.message, {
+      parse_mode:   "Markdown",
+      reply_markup: buildAdvertKeyboard(advert),
+    });
+  } catch (err) {
+    console.error("❌ /advert error:", err.message);
+    safeSendMessage(chatId, "❌ Failed to send advert: " + err.message);
+  }
+});
+
+// ─── /previewadvert ───────────────────────────────────────────────────────────
+bot.onText(/\/previewadvert$/, async (msg) => {
+  const chatId = cid(msg.chat.id);
+  if (!ADMIN_IDS.includes(chatId)) {
+    return safeSendMessage(chatId, "🚫 This command is for admins only.");
+  }
+  const advert = loadAdvert();
+  await safeSendMessage(chatId,
+    `👁 *Preview Mode*\n\n📝 *Message:* ${advert.message}\n🔗 *Link:* ${advert.link}\n🔢 *Buttons:* ${advert.buttons.length}\n\n⬇️ Rendered below:`
+  );
+  try {
+    await bot.sendMessage(chatId, advert.message, {
+      parse_mode:   "Markdown",
+      reply_markup: buildAdvertKeyboard(advert),
+    });
+  } catch (err) {
+    safeSendMessage(chatId, "❌ Could not render preview: " + err.message);
+  }
+});
+
+// ─── /sendadvert ──────────────────────────────────────────────────────────────
+bot.onText(/\/sendadvert$/, async (msg) => {
+  const chatId = cid(msg.chat.id);
+  if (!ADMIN_IDS.includes(chatId)) {
+    return safeSendMessage(chatId, "🚫 This command is for admins only.");
+  }
+  const advert = loadAdvert();
+  await safeSendMessage(chatId, "⏳ Broadcasting advert to all users...");
+  let allUsers = [];
+  try {
+    allUsers = await db.getAllUsers();
+  } catch (err) {
+    return safeSendMessage(chatId, "❌ Could not fetch users: " + err.message);
+  }
+  let sent = 0, failed = 0;
+  for (const uid of allUsers) {
+    try {
+      await bot.sendMessage(uid, advert.message, {
+        parse_mode:   "Markdown",
+        reply_markup: buildAdvertKeyboard(advert),
+      });
+      sent++;
+      await new Promise(r => setTimeout(r, 60));
+    } catch (_) { failed++; }
+  }
+  await safeSendMessage(chatId, `✅ *Advert broadcast complete!*\n\n📤 Sent: ${sent}\n❌ Failed: ${failed}`);
+});
+
+// ─── /editadvert ──────────────────────────────────────────────────────────────
+bot.onText(/\/editadvert$/, async (msg) => {
+  const chatId = cid(msg.chat.id);
+  if (!ADMIN_IDS.includes(chatId)) {
+    return safeSendMessage(chatId, "🚫 This command is for admins only.");
+  }
+  advertEditSessions[chatId] = { step: "menu" };
+  await showAdvertEditMenu(chatId);
+});
+
+async function showAdvertEditMenu(chatId) {
+  const advert = loadAdvert();
+  await safeSendMessage(chatId,
+    `⚙️ *Advert Editor*\n\n💬 *Message:* ${advert.message}\n🔗 *Link:* ${advert.link}\n🔢 *Buttons:* ${advert.buttons.length}\n\nWhat would you like to do?`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "✏️ Change Message",   callback_data: "advedit_changemsg" },
+           { text: "🔗 Change Link",       callback_data: "advedit_changelink" }],
+          [{ text: "➕ Add Button",         callback_data: "advedit_addbutton" },
+           { text: "🗑 Remove Button",      callback_data: "advedit_removebutton" }],
+          [{ text: "✏️ Edit Button Text",  callback_data: "advedit_editbutton" },
+           { text: "🔀 Reorder Buttons",   callback_data: "advedit_reorder" }],
+          [{ text: "📋 List All Buttons",  callback_data: "advedit_listbuttons" }],
+          [{ text: "❌ Cancel",            callback_data: "advedit_cancel" }],
+        ]
+      }
+    }
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ─── /start ───────────────────────────────────────────────────────────────────
 bot.onText(/\/start/, async (msg) => {
   const chatId   = cid(msg.from.id);
@@ -711,7 +864,7 @@ bot.onText(/\/listsubs/, async (msg) => {
   safeSendMessage(cid(msg.chat.id), text || "No active subscriptions.");
 });
 
-// ─── ADMIN: /approve & /deny — MANUAL APPROVAL ────────────────────────────────
+// ─── ADMIN: /approve & /deny ──────────────────────────────────────────────────
 bot.onText(/\/approve (\d+)/, async (msg, match) => {
   if (!ADMIN_IDS.includes(cid(msg.chat.id))) return;
   const targetId = match[1];
@@ -738,7 +891,6 @@ bot.onText(/\/deny (\d+)/, async (msg, match) => {
 bot.onText(/\/broadcast_paid/, async (msg) => {
   const chatId = cid(msg.chat.id);
   if (!ADMIN_IDS.includes(chatId)) return;
-
   broadcastState[chatId] = { step: "headline" };
   await sendWithTyping(chatId,
     `📢 *Broadcast to Paid Users*\n\nStep 1 of 2: Enter the *message headline*\n_(e.g. "Alicia Kanini New Leak 🔥")_`
@@ -799,6 +951,60 @@ bot.on("callback_query", async (query) => {
   const data   = query.data;
   bot.answerCallbackQuery(query.id).catch(() => {});
 
+  // ── ADVERT EDIT CALLBACKS ──────────────────────────────────────────────────
+  if (data.startsWith("advedit_")) {
+    if (!ADMIN_IDS.includes(chatId)) return;
+
+    if (data === "advedit_changemsg") {
+      advertEditSessions[chatId] = { step: "awaiting_message" };
+      return safeSendMessage(chatId, `✏️ *Change advert message*\n\nEnter the new message text:`);
+    }
+    if (data === "advedit_changelink") {
+      advertEditSessions[chatId] = { step: "awaiting_link" };
+      return safeSendMessage(chatId, `🔗 *Change button link*\n\nEnter the new URL (e.g. https://t.me/yourchannel):`);
+    }
+    if (data === "advedit_addbutton") {
+      advertEditSessions[chatId] = { step: "awaiting_new_button" };
+      return safeSendMessage(chatId, `➕ *Add a new button*\n\nEnter the button text (emojis allowed):`);
+    }
+    if (data === "advedit_removebutton") {
+      const advert = loadAdvert();
+      if (!advert.buttons.length) return safeSendMessage(chatId, "⚠️ No buttons to remove.");
+      advertEditSessions[chatId] = { step: "awaiting_remove_id" };
+      const list = advert.buttons.map(b => `*#${b.id}* — ${b.text}`).join("\n");
+      return safeSendMessage(chatId, `🗑 *Remove a button*\n\nCurrent buttons:\n${list}\n\nEnter the *ID number* to remove:`);
+    }
+    if (data === "advedit_editbutton") {
+      const advert = loadAdvert();
+      if (!advert.buttons.length) return safeSendMessage(chatId, "⚠️ No buttons to edit.");
+      advertEditSessions[chatId] = { step: "awaiting_edit_id" };
+      const list = advert.buttons.map(b => `*#${b.id}* — ${b.text}`).join("\n");
+      return safeSendMessage(chatId, `✏️ *Edit button text*\n\nCurrent buttons:\n${list}\n\nEnter the *ID number* to edit:`);
+    }
+    if (data === "advedit_reorder") {
+      const advert = loadAdvert();
+      if (advert.buttons.length < 2) return safeSendMessage(chatId, "⚠️ Need at least 2 buttons to reorder.");
+      advertEditSessions[chatId] = { step: "awaiting_reorder" };
+      const list = advert.buttons.map(b => `*#${b.id}* — ${b.text}`).join("\n");
+      return safeSendMessage(chatId,
+        `🔀 *Reorder buttons*\n\nCurrent order:\n${list}\n\nEnter IDs comma-separated in your desired order:\n_Example:_ \`3, 1, 5, 2, 4\``
+      );
+    }
+    if (data === "advedit_listbuttons") {
+      const advert = loadAdvert();
+      if (!advert.buttons.length) return safeSendMessage(chatId, "⚠️ No buttons configured yet.");
+      const list = advert.buttons.map((b, i) => `${i + 1}. *#${b.id}* — ${b.text}`).join("\n");
+      return safeSendMessage(chatId,
+        `📋 *Current Advert Buttons (${advert.buttons.length}):*\n\n${list}\n\n🔗 *Link:* ${advert.link}\n💬 *Message:* ${advert.message}`
+      );
+    }
+    if (data === "advedit_cancel") {
+      delete advertEditSessions[chatId];
+      return safeSendMessage(chatId, "❌ Edit session cancelled.");
+    }
+    return;
+  }
+
   // ── BACK ───────────────────────────────────────────────────────────────────
   if (data === "back_to_packages") {
     return sendWithTyping(chatId, `👇 *Choose your package:*`, { reply_markup: mainPackageKeyboard() });
@@ -833,18 +1039,16 @@ bot.on("callback_query", async (query) => {
       package: plan.pkg,
     };
     saveUserSelection(chatId, userSelections[chatId]);
-
     return sendWithTyping(chatId,
       `✅ *${plan.pkg} — ${plan.label}*\n💰 Ksh *${plan.price}*\n\nHow would you like to pay?`,
       { reply_markup: paymentKeyboard() }
     );
   }
 
-  // ── PAY VIA MPESA — DIRECT SEND MONEY ─────────────────────────────────────
+  // ── PAY VIA MPESA ──────────────────────────────────────────────────────────
   if (data === "pay_manual_mpesa") {
     const sel = userSelections[chatId];
     if (!sel?.price) return sendWithTyping(chatId, `⚠️ Please select a package first. Tap /start`);
-
     return sendWithTyping(chatId,
       `💳 *Payment Instructions*\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -952,7 +1156,6 @@ bot.on("callback_query", async (query) => {
       paymentMethod: "crypto",
     };
     saveUserSelection(chatId, userSelections[chatId]);
-
     return sendWithTyping(chatId,
       `✅ *${cp.pkg} — ${cp.label}* | ${cp.price} USDT\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -1083,6 +1286,93 @@ bot.on("message", async (msg) => {
   const text   = msg.text.trim();
   const sel    = userSelections[chatId] || {};
 
+  // ── ADVERT EDIT WIZARD ────────────────────────────────────────────────────
+  if (ADMIN_IDS.includes(chatId) && advertEditSessions[chatId]) {
+    const session = advertEditSessions[chatId];
+
+    if (session.step === "awaiting_message") {
+      const advert = loadAdvert();
+      advert.message = text;
+      saveAdvert(advert);
+      delete advertEditSessions[chatId];
+      return safeSendMessage(chatId, `✅ *Advert message updated!*\n\nNew message:\n_${text}_`);
+    }
+
+    if (session.step === "awaiting_link") {
+      if (!text.startsWith("http")) {
+        return safeSendMessage(chatId, "⚠️ Please enter a valid URL starting with http:// or https://");
+      }
+      const advert = loadAdvert();
+      advert.link = text;
+      saveAdvert(advert);
+      delete advertEditSessions[chatId];
+      return safeSendMessage(chatId, `✅ *Link updated!*\n\nNew link: ${text}`);
+    }
+
+    if (session.step === "awaiting_new_button") {
+      const advert = loadAdvert();
+      const newBtn = { id: advertNextId(advert), text };
+      advert.buttons.push(newBtn);
+      saveAdvert(advert);
+      delete advertEditSessions[chatId];
+      return safeSendMessage(chatId, `✅ *Button added!*\n\n*Text:* ${text}\n*ID:* ${newBtn.id}\n\nTotal buttons: ${advert.buttons.length}`);
+    }
+
+    if (session.step === "awaiting_remove_id") {
+      const id = parseInt(text, 10);
+      const advert = loadAdvert();
+      const before = advert.buttons.length;
+      advert.buttons = advert.buttons.filter(b => b.id !== id);
+      if (advert.buttons.length === before) {
+        return safeSendMessage(chatId, `⚠️ No button found with ID *${id}*.`);
+      }
+      saveAdvert(advert);
+      delete advertEditSessions[chatId];
+      return safeSendMessage(chatId, `✅ *Button #${id} removed!*\n\nRemaining buttons: ${advert.buttons.length}`);
+    }
+
+    if (session.step === "awaiting_edit_id") {
+      const id = parseInt(text, 10);
+      const advert = loadAdvert();
+      const btn = advert.buttons.find(b => b.id === id);
+      if (!btn) return safeSendMessage(chatId, `⚠️ No button found with ID *${id}*.`);
+      advertEditSessions[chatId] = { step: "awaiting_edit_text", id };
+      return safeSendMessage(chatId, `✏️ *Current text for button #${id}:*\n_${btn.text}_\n\nEnter the new text:`);
+    }
+
+    if (session.step === "awaiting_edit_text") {
+      const advert = loadAdvert();
+      const btn = advert.buttons.find(b => b.id === session.id);
+      if (!btn) {
+        delete advertEditSessions[chatId];
+        return safeSendMessage(chatId, `⚠️ Button #${session.id} no longer exists.`);
+      }
+      const old = btn.text;
+      btn.text = text;
+      saveAdvert(advert);
+      delete advertEditSessions[chatId];
+      return safeSendMessage(chatId, `✅ *Button #${session.id} updated!*\n\n*Old:* ${old}\n*New:* ${text}`);
+    }
+
+    if (session.step === "awaiting_reorder") {
+      const ids = text.split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      const advert = loadAdvert();
+      const btnMap = Object.fromEntries(advert.buttons.map(b => [b.id, b]));
+      const reordered = ids.map(id => btnMap[id]).filter(Boolean);
+      const mentioned = new Set(ids);
+      const leftover  = advert.buttons.filter(b => !mentioned.has(b.id));
+      advert.buttons = [...reordered, ...leftover];
+      saveAdvert(advert);
+      delete advertEditSessions[chatId];
+      return safeSendMessage(chatId,
+        `✅ *Buttons reordered!*\n\nNew order:\n` +
+        advert.buttons.map((b, i) => `${i + 1}. [#${b.id}] ${b.text}`).join("\n")
+      );
+    }
+
+    return; // swallow unrecognised input during edit session
+  }
+
   // ── BROADCAST WIZARD ──────────────────────────────────────────────────────
   if (ADMIN_IDS.includes(chatId) && broadcastState[chatId]) {
     const state = broadcastState[chatId];
@@ -1100,7 +1390,6 @@ bot.on("message", async (msg) => {
       delete broadcastState[chatId];
 
       const fullMessage = `🔥 *${headline}*\n\n${followup}\n\n_— Naughty254_`;
-
       await sendWithTyping(chatId, `⏳ Sending broadcast to all users...`);
 
       const allUsers = await db.getAllUsers();
@@ -1167,7 +1456,6 @@ bot.on("message", async (msg) => {
       timestamp: Date.now(),
     };
 
-    // ── Notify user with loading states ─────────────────────────────────────
     await sendWithTyping(chatId, `⏳ _Processing payment…_`, { parse_mode: "Markdown" });
     await new Promise(r => setTimeout(r, 1000));
     await sendWithTyping(chatId, `🔄 _Verifying transaction…_`, { parse_mode: "Markdown" });
@@ -1184,7 +1472,6 @@ bot.on("message", async (msg) => {
       `_Approvals are typically completed within 2–5 minutes. We appreciate your patience!_ 🙏`
     );
 
-    // ── Notify admins with inline Approve / Deny buttons ──────────────────
     const adminMsg =
       `🔔 *NEW MANUAL PAYMENT REQUEST*\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -1220,8 +1507,8 @@ bot.on("message", async (msg) => {
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "⬆️ Upgrade / Extend",                    callback_data: "change_package" }],
-            [{ text: "🔗 Resend My Access Link",                callback_data: "check_my_payment" }],
+            [{ text: "⬆️ Upgrade / Extend",     callback_data: "change_package" }],
+            [{ text: "🔗 Resend My Access Link", callback_data: "check_my_payment" }],
           ]
         }
       }
@@ -1283,9 +1570,6 @@ app.get("/api/status", (req, res) => {
 async function startup() {
   await db.initDB();
   await restoreActiveSubscriptions();
-
-  // ─── ADVERT FEATURE ───────────────────────────────────────────────────────
-  advertCommands.register(bot, ADMIN_IDS, db, safeSendMessage, sendWithTyping, cid);
 
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
